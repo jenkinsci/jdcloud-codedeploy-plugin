@@ -1,0 +1,78 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+  <f:entry title="${%AppName}" field="applicationName">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="${%GroupName}" field="deploymentGroupName">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="${%Region}" field="region">
+    <f:select />
+  </f:entry>
+  <!--<f:entry title="${%Bucket}" field="ossBucket">-->
+    <!--<f:textbox />-->
+  <!--</f:entry>-->
+  <!--<f:entry title="${%Object}" field="ossObject">-->
+    <!--<f:textbox default="" />-->
+  <!--</f:entry>-->
+  <f:entry title="${%Subdirectory}" field="subdirectory">
+    <f:textbox default="" />
+  </f:entry>
+  <f:entry title="${%Includes}" field="includes">
+    <f:textbox default="**" />
+  </f:entry>
+  <f:entry title="${%Excludes}" field="excludes">
+    <f:textbox default="" />
+  </f:entry>
+  <f:entry title="${%ProxyHost}" field="proxyHost">
+    <f:textbox default="" />
+  </f:entry>
+  <f:entry title="${%ProxyPort}" field="proxyPort">
+    <f:textbox default="" />
+  </f:entry>
+  <!--<f:entry title="${%DownloadUrl}" field="downloadUrl">-->
+    <!--<f:textbox />-->
+  <!--</f:entry>-->
+
+    <f:radioBlock title="${%DeploymentMethod}" name="deploymentMethod" value="deploy" checked="${instance.getDeploymentMethod() == 'deploy'}" inline="true">
+      <f:description>
+        ${%DeploymentMethodDesc}
+      </f:description>
+      <f:optionalBlock title="${%DeployWait}" field="waitForCompletion" checked="${instance.getWaitForCompletion()}" inline="true">
+        <f:entry title="${%PollingTimeoutSec}" field="pollingTimeoutSec">
+          <f:textbox default="300"/>
+        </f:entry>
+        <f:entry title="${%PollingFreqSec}" field="pollingFreqSec">
+          <f:textbox default="15"/>
+        </f:entry>
+      </f:optionalBlock>
+    </f:radioBlock>
+
+  <!--<f:radioBlock title="${%Credentials}" name="credentials" checked="${instance.getCredentials() == 'accessKey'}" inline="true" value="accessKey">-->
+  <!--</f:radioBlock>-->
+  <f:entry title="${%AccessKey}" field="accessKey">
+    <f:textbox />
+  </f:entry>
+  <f:entry title="${%SecretKey}" field="secretKey">
+    <f:password />
+  </f:entry>
+
+  <f:radioBlock title="${%UseOss}" name="deploySource" checked="${instance.getDeploySource() == 'ossBucket'}" inline="true" value="ossBucket">
+    <f:description>
+      ${%DeploySourceDesc}
+    </f:description>
+    <f:entry title="${%Bucket}" field="ossBucket">
+      <f:textbox />
+    </f:entry>
+    <f:entry title="${%Object}" field="ossObject">
+      <f:textbox default="" />
+    </f:entry>
+  </f:radioBlock>
+
+  <f:radioBlock title="${%UseUrl}" name="deploySource" checked="${instance.getDeploySource() == 'downloadUrl'}" inline="true" value="downloadUrl">
+    <f:entry title="${%DownloadUrl}" field="downloadUrl">
+      <f:textbox />
+    </f:entry>
+  </f:radioBlock>
+
+</j:jelly>

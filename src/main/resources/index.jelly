@@ -1,0 +1,4 @@
+<?jelly escape-by-default='true'?>
+<div>
+    This plugin provides a "post-build" step for JDCloud CodeDeploy.
+</div>
