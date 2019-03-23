@@ -1,7 +1,6 @@
-package io.jenkins.plugins;
+package com.jdcloud.codedeploy;
 
 import com.amazonaws.ClientConfiguration;
-import com.amazonaws.SDKGlobalConfiguration;
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
@@ -11,9 +10,9 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
+import com.google.common.primitives.Booleans;
 import com.jdcloud.sdk.auth.CredentialsProvider;
 import com.jdcloud.sdk.auth.StaticCredentialsProvider;
-import com.jdcloud.sdk.client.Environment;
 import com.jdcloud.sdk.http.HttpRequestConfig;
 import com.jdcloud.sdk.http.Protocol;
 import com.jdcloud.sdk.service.common.model.Filter;
@@ -33,6 +32,7 @@ import hudson.util.ListBoxModel;
 import hudson.util.io.ArchiverFactory;
 import jenkins.tasks.SimpleBuildStep;
 import net.sf.json.JSONObject;
+import org.apache.commons.lang.BooleanUtils;
 import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
@@ -46,12 +46,15 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep {
 
-    public static final long      DEFAULT_TIMEOUT_SECONDS           = 900;
-    public static final long      DEFAULT_POLLING_FREQUENCY_SECONDS = 15;
+    private static final long DEFAULT_TIMEOUT_SECONDS           = 900;
+    private static final long DEFAULT_POLLING_FREQUENCY_SECONDS = 15;
 
     private final String ossBucket;
     private final String ossObject;
@@ -71,8 +74,7 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
 
     private final String accessKey;
     private final String secretKey;
-//    private final String credentials;
-    private final String deploymentMethod;
+    private final boolean doDeploy;
 
     private String ossObjectName;
     private String deploymentGroupId;
@@ -105,8 +107,7 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
             Boolean waitForCompletion,
             Long pollingTimeoutSec,
             Long pollingFreqSec,
-//            String credentials,
-            String deploymentMethod,
+            Boolean doDeploy,
             String accessKey,
             String secretKey,
             String includes,
@@ -125,14 +126,13 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         this.subdirectory = subdirectory;
         this.proxyHost = proxyHost;
         this.proxyPort = proxyPort;
-//        this.credentials = credentials;
-        this.deploymentMethod = deploymentMethod;
+        this.doDeploy = doDeploy;
         this.accessKey = accessKey;
         this.secretKey = secretKey;
         this.downloadUrl = downloadUrl;
         this.deploySource = deploySource;
 
-        if (waitForCompletion != null && waitForCompletion) {
+        if (BooleanUtils.isTrue(waitForCompletion)) {
             this.waitForCompletion = true;
             if (pollingTimeoutSec == null) {
                 this.pollingTimeoutSec = DEFAULT_TIMEOUT_SECONDS;
@@ -182,12 +182,15 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
                 final FilePath sourceDirectory = getSourceDirectory(workspace);
                 tarAndUpload(genAmazonS3(), projectName, sourceDirectory);
             }
-            String deployId = createDeployment(deployClient);
-            success = waitForDeployment(deployClient, deployId);
-
+            if (doDeploy) {
+                String deployId = createDeployment(deployClient);
+                success = waitForDeployment(deployClient, deployId);
+            } else {
+                logger.println("Skip deployment.");
+                success = true;
+            }
 
         } catch (Exception e) {
-
             this.logger.println("Failed CodeDeploy post-build step; exception follows.");
             this.logger.println(e.getMessage());
             e.printStackTrace(this.logger);
@@ -203,20 +206,14 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         return DeployClient.builder()
                 .credentialsProvider(credentialsProvider)
                 .httpRequestConfig(new HttpRequestConfig.Builder().protocol(Protocol.HTTPS).build()) //默认为HTTPS
-//                .environment(new Environment.Builder().endpoint(genDeployClientEndpoint()).build())
                 .build();
     }
 
     private AmazonS3 genAmazonS3() {
-        final String accessKey = this.accessKey;
-        final String secretKey = this.secretKey;
-        System.setProperty(SDKGlobalConfiguration.ENABLE_S3_SIGV4_SYSTEM_PROPERTY, "true");
         ClientConfiguration config = new ClientConfiguration();
-
         AwsClientBuilder.EndpointConfiguration endpointConfig =
                 new AwsClientBuilder.EndpointConfiguration(genS3Endpoint(), this.regionId);
-
-        AWSCredentials awsCredentials = new BasicAWSCredentials(accessKey,secretKey);
+        AWSCredentials awsCredentials = new BasicAWSCredentials(this.accessKey, this.secretKey);
         AWSCredentialsProvider awsCredentialsProvider = new AWSStaticCredentialsProvider(awsCredentials);
 
         return AmazonS3Client.builder()
@@ -231,10 +228,6 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
     private String genS3Endpoint() {
         return "s3." + this.regionId + ".jcloudcs.com";
     }
-
-//    private String genDeployClientEndpoint() {
-//        return "apigw-internal." + this.regionId + ".jcloudcs.com";
-//    }
 
     private String genFormattedTime() {
         LocalDateTime now = LocalDateTime.now();
@@ -255,10 +248,9 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         appsRequest.addFilter(filter);
         DescribeAppsResponse appsResponse = deployClient.describeApps(appsRequest);
         if (appsResponse.getError() != null) {
-            logger.println("query application error: " + appsResponse.getError().getMessage());
+            throw new IllegalArgumentException("Query application error: " + appsResponse.getError().getMessage());
         }
         if (appsResponse.getResult().getTotalCount().intValue() == 0) {
-            logger.println("Cannot find application named " + this.applicationName);
             throw new IllegalArgumentException("Cannot find application named " + this.applicationName);
         }
         // Check that the deployment group exists
@@ -303,7 +295,7 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         return false;
     }
 
-    public String tarAndUpload(AmazonS3 s3, String projectName, FilePath sourceDirectory) throws IOException, InterruptedException, IllegalArgumentException {
+    private String tarAndUpload(AmazonS3 s3, String projectName, FilePath sourceDirectory) throws IOException, InterruptedException, IllegalArgumentException {
 
         File tarFile = File.createTempFile(projectName + "-", ".tar.gz");
         String key = projectName + "-" + genFormattedTime() + ".tar.gz";
@@ -311,22 +303,19 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         String bucket = this.ossBucket;
 
         if(bucket.indexOf("/") > 0){
-            throw new IllegalArgumentException("S3 Bucket field cannot contain any subdirectories.  Bucket name only!");
+            throw new IllegalArgumentException("Oss Bucket field cannot contain any subdirectories.  Bucket name only!");
         }
 
         try {
 
             logger.println("Taring files into " + tarFile.getAbsolutePath());
 
-            FileOutputStream outputStream = new FileOutputStream(tarFile);
-            try {
+            try (FileOutputStream outputStream = new FileOutputStream(tarFile)) {
                 sourceDirectory.archive(
                         ArchiverFactory.TARGZ,
                         outputStream,
                         new DirScanner.Glob(this.includes, this.excludes)
                 );
-            } finally {
-                outputStream.close();
             }
 
             if (!prefix.isEmpty()) {
@@ -337,7 +326,7 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
                 }
             }
 
-            logger.println("Uploading package to s3://" + bucket + "/" + key);
+            logger.println("Uploading package to Oss://" + bucket + "/" + key);
             s3.putObject(bucket, key, tarFile);
             logger.println("Upload finished: " + key);
             this.ossObjectName = key;
@@ -369,7 +358,6 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         }
         CreateDeployResponse deployResponse = deployClient.createDeploy(deployRequest);
         if (deployResponse.getError() != null) {
-            logger.println("Create deploy error: " + deployResponse.getError().getMessage());
             throw new IllegalArgumentException("Create deploy error: " + deployResponse.getError().getMessage());
         }
         return deployResponse.getResult().getDeployId();
@@ -429,7 +417,6 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         deployRequest.setDeployId(deployId);
         DescribeDeployResponse deployResponse = deployClient.describeDeploy(deployRequest);
         if (deployResponse.getError() != null) {
-            logger.println("Describe deploy error: " + deployResponse.getError().getMessage());
             throw new IllegalArgumentException("Describe deploy error: " + deployResponse.getError().getMessage());
         }
         return deployResponse.getResult().getDeploy();
@@ -453,9 +440,6 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
      *
      * Descriptor for {@link }. Used as a singleton.
      * The class is marked as public so that it can be accessed from views.
-     *
-     * See <tt>src/main/resources/com/amazonaws/codedeploy/AWSCodeDeployPublisher/*.jelly</tt>
-     * for the actual HTML fragment for the configuration screen.
      */
     @Extension // This indicates to Jenkins that this is an implementation of an extension point.
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
@@ -621,12 +605,8 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         return secretKey;
     }
 
-//    public String getCredentials() {
-//        return credentials;
-//    }
-
-    public String getDeploymentMethod() {
-        return deploymentMethod;
+    public boolean getDoDeploy() {
+        return doDeploy;
     }
 
     public String getDownloadUrl() {

@@ -9,12 +9,6 @@
   <f:entry title="${%Region}" field="region">
     <f:select />
   </f:entry>
-  <!--<f:entry title="${%Bucket}" field="ossBucket">-->
-    <!--<f:textbox />-->
-  <!--</f:entry>-->
-  <!--<f:entry title="${%Object}" field="ossObject">-->
-    <!--<f:textbox default="" />-->
-  <!--</f:entry>-->
   <f:entry title="${%Subdirectory}" field="subdirectory">
     <f:textbox default="" />
   </f:entry>
@@ -30,23 +24,6 @@
   <f:entry title="${%ProxyPort}" field="proxyPort">
     <f:textbox default="" />
   </f:entry>
-  <!--<f:entry title="${%DownloadUrl}" field="downloadUrl">-->
-    <!--<f:textbox />-->
-  <!--</f:entry>-->
-
-    <f:radioBlock title="${%DeploymentMethod}" name="deploymentMethod" value="deploy" checked="${instance.getDeploymentMethod() == 'deploy'}" inline="true">
-      <f:description>
-        ${%DeploymentMethodDesc}
-      </f:description>
-      <f:optionalBlock title="${%DeployWait}" field="waitForCompletion" checked="${instance.getWaitForCompletion()}" inline="true">
-        <f:entry title="${%PollingTimeoutSec}" field="pollingTimeoutSec">
-          <f:textbox default="300"/>
-        </f:entry>
-        <f:entry title="${%PollingFreqSec}" field="pollingFreqSec">
-          <f:textbox default="15"/>
-        </f:entry>
-      </f:optionalBlock>
-    </f:radioBlock>
 
   <!--<f:radioBlock title="${%Credentials}" name="credentials" checked="${instance.getCredentials() == 'accessKey'}" inline="true" value="accessKey">-->
   <!--</f:radioBlock>-->
@@ -74,5 +51,19 @@
       <f:textbox />
     </f:entry>
   </f:radioBlock>
+
+  <f:optionalBlock title="${%DoDeploy}" field="doDeploy" checked="${instance.getDoDeploy()}" inline="true">
+    <f:description>
+      ${%DoDeployDesc}
+    </f:description>
+    <f:optionalBlock title="${%DeployWait}" field="waitForCompletion" checked="${instance.getWaitForCompletion()}" inline="true">
+      <f:entry title="${%PollingTimeoutSec}" field="pollingTimeoutSec">
+        <f:textbox default="300"/>
+      </f:entry>
+      <f:entry title="${%PollingFreqSec}" field="pollingFreqSec">
+        <f:textbox default="15"/>
+      </f:entry>
+    </f:optionalBlock>
+  </f:optionalBlock>
 
 </j:jelly>
