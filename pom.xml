@@ -7,10 +7,14 @@
         <version>3.4</version>
         <relativePath />
     </parent>
-    <groupId>com.jdcloud</groupId>
-    <artifactId>codedeploy</artifactId>
+
+    <artifactId>jdcloud-codedeploy</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>hpi</packaging>
+    <name>JDCloud CodeDeploy Plugin</name>
+    <description>This plugin provides a "post-build" step for JDCloud CodeDeploy.</description>
+    <url>https://docs.jdcloud.com/cn/codedeploy/jenkins</url>
+
     <properties>
         <!-- Baseline Jenkins version you use to build the plugin. Users must have this version or newer to run. -->
         <jenkins.version>2.7.3</jenkins.version>
@@ -21,8 +25,7 @@
           ~ stapler-plugin.version: The Stapler Maven plugin version required by the plugin.
      -->
     </properties>
-    <name>JDCloud CodeDeploy Plugin</name>
-    <description>This plugin provides a "post-build" step for JDCloud CodeDeploy.</description>
+
     <!-- The default licence for Jenkins OSS Plugins is MIT. Substitute for the applicable one if needed. -->
     <licenses>
         <license>

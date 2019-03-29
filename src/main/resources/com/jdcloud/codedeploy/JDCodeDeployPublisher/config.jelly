@@ -6,7 +6,7 @@
   <f:entry title="${%GroupName}" field="deploymentGroupName">
     <f:textbox />
   </f:entry>
-  <f:entry title="${%Region}" field="region">
+  <f:entry title="${%Region}" field="regionId">
     <f:select />
   </f:entry>
   <f:entry title="${%Subdirectory}" field="subdirectory">
@@ -18,15 +18,7 @@
   <f:entry title="${%Excludes}" field="excludes">
     <f:textbox default="" />
   </f:entry>
-  <f:entry title="${%ProxyHost}" field="proxyHost">
-    <f:textbox default="" />
-  </f:entry>
-  <f:entry title="${%ProxyPort}" field="proxyPort">
-    <f:textbox default="" />
-  </f:entry>
 
-  <!--<f:radioBlock title="${%Credentials}" name="credentials" checked="${instance.getCredentials() == 'accessKey'}" inline="true" value="accessKey">-->
-  <!--</f:radioBlock>-->
   <f:entry title="${%AccessKey}" field="accessKey">
     <f:textbox />
   </f:entry>

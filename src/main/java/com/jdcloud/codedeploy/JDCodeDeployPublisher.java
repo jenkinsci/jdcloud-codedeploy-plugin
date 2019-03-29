@@ -10,7 +10,6 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
-import com.google.common.primitives.Booleans;
 import com.jdcloud.sdk.auth.CredentialsProvider;
 import com.jdcloud.sdk.auth.StaticCredentialsProvider;
 import com.jdcloud.sdk.http.HttpRequestConfig;
@@ -29,6 +28,7 @@ import hudson.tasks.Publisher;
 import hudson.util.DirScanner;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
+import hudson.util.Secret;
 import hudson.util.io.ArchiverFactory;
 import jenkins.tasks.SimpleBuildStep;
 import net.sf.json.JSONObject;
@@ -53,7 +53,7 @@ import java.util.Map;
 
 public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep {
 
-    private static final long DEFAULT_TIMEOUT_SECONDS           = 900;
+    private static final long DEFAULT_TIMEOUT_SECONDS = 900;
     private static final long DEFAULT_POLLING_FREQUENCY_SECONDS = 15;
 
     private final String ossBucket;
@@ -67,13 +67,11 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
     private final String includes;
     private final String excludes;
     private final String subdirectory;
-    private final String proxyHost;
-    private final int proxyPort;
     private final String deploySource;
     private final String downloadUrl;
 
     private final String accessKey;
-    private final String secretKey;
+    private final Secret secretKey;
     private final boolean doDeploy;
 
     private String ossObjectName;
@@ -93,7 +91,7 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         put(4, "Rolling Back");
         put(5, "RollBack Succeed");
         put(6, "Rollback Failed");
-        put(7, "Cancel");
+        put(7, "Cancelled");
     }};
 
     // Fields in config.jelly must match the parameter names in the "DataBoundConstructor"
@@ -103,16 +101,14 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
             String ossObject,
             String applicationName,
             String deploymentGroupName,
-            String region,
+            String regionId,
             Boolean waitForCompletion,
             Long pollingTimeoutSec,
             Long pollingFreqSec,
             Boolean doDeploy,
             String accessKey,
-            String secretKey,
+            Secret secretKey,
             String includes,
-            String proxyHost,
-            int proxyPort,
             String downloadUrl,
             String deploySource,
             String excludes,
@@ -120,12 +116,10 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
 
         this.applicationName = applicationName;
         this.deploymentGroupName = deploymentGroupName;
-        this.regionId = region;
+        this.regionId = regionId;
         this.includes = includes;
         this.excludes = excludes;
         this.subdirectory = subdirectory;
-        this.proxyHost = proxyHost;
-        this.proxyPort = proxyPort;
         this.doDeploy = doDeploy;
         this.accessKey = accessKey;
         this.secretKey = secretKey;
@@ -165,22 +159,34 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         envVars = build.getEnvironment(listener);
         final boolean buildFailed = build.getResult() == Result.FAILURE;
         if (buildFailed) {
-            logger.println("Skipping CodeDeploy publisher as build failed");
+            this.logger.println("Skipping CodeDeploy publisher as build failed");
             return;
         }
 
-        logger.println("Start publish ...");
+        this.logger.println("Start publish ...");
+
+        String accessKey = this.accessKey;
+        String secretKey = Secret.toString(this.secretKey);
+        if (Strings.isNullOrEmpty(accessKey) || Strings.isNullOrEmpty(secretKey)) {
+            this.logger.println("Cannot find AccessKey, use global AccessKey.");
+            accessKey = getDescriptor().getAccessKey();
+            secretKey = Secret.toString(getDescriptor().getSecretKey());
+            if (Strings.isNullOrEmpty(accessKey) || Strings.isNullOrEmpty(secretKey)) {
+                throw new AbortException("Cannot find global AccessKey neither.");
+            }
+        }
+
         boolean success = false;
 
         try {
 
-            DeployClient deployClient = genJDClient();
+            DeployClient deployClient = genJDClient(accessKey, secretKey);
             verifyCodeDeployAppAndGroup(deployClient);
 
             if (Strings.isNullOrEmpty(this.downloadUrl)) {
                 final String projectName = build.getFullDisplayName().replace(build.getDisplayName(), "").trim();
                 final FilePath sourceDirectory = getSourceDirectory(workspace);
-                tarAndUpload(genAmazonS3(), projectName, sourceDirectory);
+                tarAndUpload(genAmazonS3(accessKey, secretKey), projectName, sourceDirectory);
             }
             if (doDeploy) {
                 String deployId = createDeployment(deployClient);
@@ -190,30 +196,31 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
                 success = true;
             }
 
+            if (!success) {
+                throw new AbortException("For more information, please visit: https://codedeploy-console.jdcloud.com");
+            }
+
         } catch (Exception e) {
             this.logger.println("Failed CodeDeploy post-build step; exception follows.");
             this.logger.println(e.getMessage());
             e.printStackTrace(this.logger);
-        }
-
-        if (!success) {
-            throw new AbortException();
+            throw new AbortException(e.getMessage());
         }
     }
 
-    private DeployClient genJDClient() {
-        CredentialsProvider credentialsProvider = new StaticCredentialsProvider(this.accessKey, this.secretKey);
+    private DeployClient genJDClient(String accessKey, String secretKey) {
+        CredentialsProvider credentialsProvider = new StaticCredentialsProvider(accessKey, secretKey);
         return DeployClient.builder()
                 .credentialsProvider(credentialsProvider)
                 .httpRequestConfig(new HttpRequestConfig.Builder().protocol(Protocol.HTTPS).build()) //默认为HTTPS
                 .build();
     }
 
-    private AmazonS3 genAmazonS3() {
+    private AmazonS3 genAmazonS3(String accessKey, String secretKey) {
         ClientConfiguration config = new ClientConfiguration();
         AwsClientBuilder.EndpointConfiguration endpointConfig =
                 new AwsClientBuilder.EndpointConfiguration(genS3Endpoint(), this.regionId);
-        AWSCredentials awsCredentials = new BasicAWSCredentials(this.accessKey, this.secretKey);
+        AWSCredentials awsCredentials = new BasicAWSCredentials(accessKey, secretKey);
         AWSCredentialsProvider awsCredentialsProvider = new AWSStaticCredentialsProvider(awsCredentials);
 
         return AmazonS3Client.builder()
@@ -238,7 +245,7 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
 
     private void verifyCodeDeployAppAndGroup(DeployClient deployClient) throws IllegalArgumentException {
         // Check that the application exists
-        logger.println("Check that the application exists");
+        this.logger.println("Check that the application exists...");
         DescribeAppsRequest appsRequest = new DescribeAppsRequest();
         appsRequest.setRegionId(this.regionId);
         Filter filter = new Filter();
@@ -253,8 +260,9 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         if (appsResponse.getResult().getTotalCount().intValue() == 0) {
             throw new IllegalArgumentException("Cannot find application named " + this.applicationName);
         }
+        this.logger.println("AppName: " + this.applicationName);
         // Check that the deployment group exists
-        logger.println("Check that the deployment group exists");
+        this.logger.println("Check that the deployment group exists...");
         DescribeGroupsRequest groupsRequest = new DescribeGroupsRequest();
         groupsRequest.setRegionId(regionId);
         Filter groupFilter = new Filter();
@@ -269,6 +277,7 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
             throw new IllegalArgumentException("Cannot find deployment group named " + this.deploymentGroupName);
         }
         this.deploymentGroupId = groupsResponse.getResult().getGroups().get(0).getGroupId();
+        this.logger.println("GroupName: " + this.deploymentGroupName + ", GroupId: " + this.deploymentGroupId);
     }
 
     private FilePath getSourceDirectory(FilePath basePath) throws IOException, InterruptedException {
@@ -279,14 +288,14 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         FilePath sourcePath = basePath.withSuffix(subdirectory).absolutize();
         if (!sourcePath.isDirectory() || !isSubDirectory(basePath, sourcePath)) {
             throw new IllegalArgumentException("Provided path (resolved as '" + sourcePath
-                    +"') is not a subdirectory of the workspace (resolved as '" + basePath + "')");
+                    + "') is not a subdirectory of the workspace (resolved as '" + basePath + "')");
         }
         return sourcePath;
     }
 
     private boolean isSubDirectory(FilePath parent, FilePath child) {
         FilePath parentFolder = child;
-        while (parentFolder!=null) {
+        while (parentFolder != null) {
             if (parent.equals(parentFolder)) {
                 return true;
             }
@@ -302,13 +311,13 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         String prefix = this.ossObject;
         String bucket = this.ossBucket;
 
-        if(bucket.indexOf("/") > 0){
+        if (bucket.indexOf("/") > 0) {
             throw new IllegalArgumentException("Oss Bucket field cannot contain any subdirectories.  Bucket name only!");
         }
 
         try {
 
-            logger.println("Taring files into " + tarFile.getAbsolutePath());
+            this.logger.println("Taring files into " + tarFile.getAbsolutePath());
 
             try (FileOutputStream outputStream = new FileOutputStream(tarFile)) {
                 sourceDirectory.archive(
@@ -326,28 +335,28 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
                 }
             }
 
-            logger.println("Uploading package to Oss://" + bucket + "/" + key);
+            this.logger.println("Uploading package to Oss://" + bucket + "/" + key);
             s3.putObject(bucket, key, tarFile);
-            logger.println("Upload finished: " + key);
+            this.logger.println("Upload finished: " + key);
             this.ossObjectName = key;
             return key;
 
         } finally {
             final boolean deleted = tarFile.delete();
             if (!deleted) {
-                logger.println("Failed to clean up file " + tarFile.getPath());
+                this.logger.println("Failed to clean up file " + tarFile.getPath());
             }
         }
     }
 
     private String createDeployment(DeployClient deployClient) {
-        logger.println("groupId: " + deploymentGroupId);
+        this.logger.println("Creating deployment...");
         CreateDeployRequest deployRequest = new CreateDeployRequest();
         deployRequest.setRegionId(this.regionId);
         deployRequest.setGroupId(this.deploymentGroupId);
         deployRequest.setCmdSource(2);
         deployRequest.setFileType(3);
-        deployRequest.setDesc("Created by jenkins");
+        deployRequest.setDesc("Created by Jenkins");
         if (!Strings.isNullOrEmpty(this.downloadUrl)) {
             deployRequest.setDeploySource(1);
             deployRequest.setDownloadUrl(downloadUrl);
@@ -358,24 +367,25 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         }
         CreateDeployResponse deployResponse = deployClient.createDeploy(deployRequest);
         if (deployResponse.getError() != null) {
-            throw new IllegalArgumentException("Create deploy error: " + deployResponse.getError().getMessage());
+            throw new IllegalArgumentException("Create deployment error: " + deployResponse.getError().getMessage());
         }
-        return deployResponse.getResult().getDeployId();
+        String deployId = deployResponse.getResult().getDeployId();
+        this.logger.println("Create deployment finish, ID: " + deployId);
+        return deployId;
     }
 
     private boolean waitForDeployment(DeployClient deployClient, String deployId) throws InterruptedException {
 
         if (!this.waitForCompletion) {
-            System.out.println("end");
             return true;
         }
 
-        logger.println("Monitoring deployment with ID " + deployId + "...");
+        this.logger.println("Monitoring deployment with ID " + deployId + "...");
 
         Deploy deploy = getDeploymentInfo(deployClient, deployId);
 
         if (deploy == null) {
-            logger.println("Cannot get deployment of ID " + deployId + ", try again ...");
+            this.logger.println("Cannot get deployment of ID " + deployId + ", try again ...");
         }
 
         long startTimeMillis;
@@ -401,11 +411,11 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
             Thread.sleep(pollingFreqMillis);
         }
 
-        logger.println("Deployment status: " + DEPLOY_STATUS.get(deploy.getDeployStatus()));
-
         if (deploy.getDeployStatus() != 2) {
             this.logger.println("Deployment did not succeed. Final status: " + DEPLOY_STATUS.get(deploy.getDeployStatus()));
             success = false;
+        } else {
+            this.logger.println("Deployment status: " + DEPLOY_STATUS.get(deploy.getDeployStatus()));
         }
 
         return success;
@@ -437,17 +447,14 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
     }
 
     /**
-     *
      * Descriptor for {@link }. Used as a singleton.
      * The class is marked as public so that it can be accessed from views.
      */
     @Extension // This indicates to Jenkins that this is an implementation of an extension point.
     public static final class DescriptorImpl extends BuildStepDescriptor<Publisher> {
 
-        private String awsAccessKey;
-        private String awsSecretKey;
-        private String proxyHost;
-        private int proxyPort;
+        private String accessKey;
+        private Secret secretKey;
 
         /**
          * In order to load the persisted global configuration, you have to
@@ -457,11 +464,31 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
             load();
         }
 
-        public FormValidation doCheckName(@QueryParameter String value)
+        public FormValidation doCheckApplicationName(@QueryParameter String value)
                 throws IOException, ServletException {
-            if (value.length() == 0)
-                return FormValidation.error("Please add the appropriate values");
-            return FormValidation.ok();
+            if (value.length() == 0) {
+                return FormValidation.error(Messages.JDCodeDeployPublisher_checkAppName());
+            } else {
+                return FormValidation.ok();
+            }
+        }
+
+        public FormValidation doCheckDeploymentGroupName(@QueryParameter String value)
+                throws IOException, ServletException {
+            if (value.length() == 0) {
+                return FormValidation.error(Messages.JDCodeDeployPublisher_checkGroupName());
+            } else {
+                return FormValidation.ok();
+            }
+        }
+
+        public FormValidation doCheckRegionId(@QueryParameter String value)
+                throws IOException, ServletException {
+            if (value.length() == 0) {
+                return FormValidation.error(Messages.JDCodeDeployPublisher_checkGroupName());
+            } else {
+                return FormValidation.ok();
+            }
         }
 
         public boolean isApplicable(Class<? extends AbstractProject> aClass) {
@@ -478,18 +505,15 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
 
         @Override
         public boolean configure(StaplerRequest req, JSONObject formData) throws FormException {
-
-            awsAccessKey = formData.getString("accessKey");
-            awsSecretKey = formData.getString("secretKey");
-            proxyHost = formData.getString("proxyHost");
-            proxyPort = Integer.parseInt(formData.getString("proxyPort"));
+            accessKey = formData.getString("accessKey");
+            secretKey = Secret.fromString(formData.getString("secretKey"));
 
             req.bindJSON(this, formData);
             save();
             return super.configure(req, formData);
         }
 
-        public ListBoxModel doFillRegionItems() {
+        public ListBoxModel doFillRegionIdItems() {
             ListBoxModel items = new ListBoxModel();
             for (String regionId : REGIONS) {
                 items.add(getRegionName(regionId), regionId);
@@ -499,50 +523,34 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
 
         private String getRegionName(String regionId) {
             switch (regionId) {
-                case "cn-north-1": return Messages.JDCodeDeployPublisher_getRegionNameNorthBeijing();
-                case "cn-east-1": return Messages.JDCodeDeployPublisher_getRegionNameEastSuqian();
-                case "cn-east-2": return Messages.JDCodeDeployPublisher_getRegionNameEastShanghai();
-                case "cn-south-1": return Messages.JDCodeDeployPublisher_getRegionNameSouthGuangzhou();
-                default: return "";
+                case "cn-north-1":
+                    return Messages.JDCodeDeployPublisher_getRegionNameNorthBeijing();
+                case "cn-east-1":
+                    return Messages.JDCodeDeployPublisher_getRegionNameEastSuqian();
+                case "cn-east-2":
+                    return Messages.JDCodeDeployPublisher_getRegionNameEastShanghai();
+                case "cn-south-1":
+                    return Messages.JDCodeDeployPublisher_getRegionNameSouthGuangzhou();
+                default:
+                    return "";
             }
         }
 
-        public void setProxyHost(String proxyHost) {
-            this.proxyHost = proxyHost;
+        public String getAccessKey() {
+            return accessKey;
         }
 
-        public String getProxyHost() {
-            return proxyHost;
+        public void setAccessKey(String accessKey) {
+            this.accessKey = accessKey;
         }
 
-        public void setProxyPort(int proxyPort) {
-            this.proxyPort = proxyPort;
+        public Secret getSecretKey() {
+            return secretKey;
         }
 
-        public int getProxyPort() {
-            return proxyPort;
+        public void setSecretKey(Secret secretKey) {
+            this.secretKey = secretKey;
         }
-
-        public String getAwsSecretKey()
-        {
-            return awsSecretKey;
-        }
-
-        public void setAwsSecretKey(String awsSecretKey)
-        {
-            this.awsSecretKey = awsSecretKey;
-        }
-
-        public String getAwsAccessKey()
-        {
-            return awsAccessKey;
-        }
-
-        public void setAwsAccessKey(String awsAccessKey)
-        {
-            this.awsAccessKey = awsAccessKey;
-        }
-
     }
 
     public String getOssBucket() {
@@ -589,19 +597,11 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         return subdirectory;
     }
 
-    public String getProxyHost() {
-        return proxyHost;
-    }
-
-    public int getProxyPort() {
-        return proxyPort;
-    }
-
     public String getAccessKey() {
         return accessKey;
     }
 
-    public String getSecretKey() {
+    public Secret getSecretKey() {
         return secretKey;
     }
 
