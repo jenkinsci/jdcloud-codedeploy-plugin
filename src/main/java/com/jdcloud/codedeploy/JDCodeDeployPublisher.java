@@ -203,7 +203,6 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         } catch (Exception e) {
             this.logger.println("Failed CodeDeploy post-build step; exception follows.");
             this.logger.println(e.getMessage());
-            e.printStackTrace(this.logger);
             throw new AbortException(e.getMessage());
         }
     }
@@ -474,15 +473,6 @@ public class JDCodeDeployPublisher extends Publisher implements SimpleBuildStep 
         }
 
         public FormValidation doCheckDeploymentGroupName(@QueryParameter String value)
-                throws IOException, ServletException {
-            if (value.length() == 0) {
-                return FormValidation.error(Messages.JDCodeDeployPublisher_checkGroupName());
-            } else {
-                return FormValidation.ok();
-            }
-        }
-
-        public FormValidation doCheckRegionId(@QueryParameter String value)
                 throws IOException, ServletException {
             if (value.length() == 0) {
                 return FormValidation.error(Messages.JDCodeDeployPublisher_checkGroupName());
