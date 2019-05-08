@@ -9,7 +9,7 @@
     </parent>
 
     <artifactId>jdcloud-codedeploy</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1-SNAPSHOT</version>
     <packaging>hpi</packaging>
     <name>JDCloud CodeDeploy Plugin</name>
     <description>This plugin provides a "post-build" step for JDCloud CodeDeploy.</description>
@@ -71,7 +71,7 @@
         <connection>scm:git:ssh://github.com/jenkinsci/jdcloud-codedeploy-plugin.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/jenkinsci/jdcloud-codedeploy-plugin.git</developerConnection>
         <url>https://github.com/jenkinsci/jdcloud-codedeploy-plugin</url>
-        <tag>jdcloud-codedeploy-1.0.0</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <repositories>
