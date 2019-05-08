@@ -67,6 +67,13 @@
         </developer>
     </developers>
 
+    <scm>
+        <connection>scm:git:ssh://github.com/jenkinsci/jdcloud-codedeploy-plugin.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/jenkinsci/jdcloud-codedeploy-plugin.git</developerConnection>
+        <url>https://github.com/jenkinsci/jdcloud-codedeploy-plugin</url>
+        <tag>jdcloud-codedeploy-1.0.0</tag>
+    </scm>
+
     <repositories>
         <repository>
             <id>repo.jenkins-ci.org</id>
