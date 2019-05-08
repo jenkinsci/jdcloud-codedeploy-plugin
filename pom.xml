@@ -13,7 +13,7 @@
     <packaging>hpi</packaging>
     <name>JDCloud CodeDeploy Plugin</name>
     <description>This plugin provides a "post-build" step for JDCloud CodeDeploy.</description>
-    <url>https://docs.jdcloud.com/cn/codedeploy/jenkins</url>
+    <url>https://wiki.jenkins.io/display/JENKINS/JDCloud+CodeDeploy+Plugin</url>
 
     <properties>
         <!-- Baseline Jenkins version you use to build the plugin. Users must have this version or newer to run. -->
@@ -58,6 +58,14 @@
             <artifactId>deploy</artifactId>
         </dependency>
     </dependencies>
+
+    <developers>
+        <developer>
+            <id>jdcloud_codedeploy</id>
+            <name>codedeploy jdcloud</name>
+            <email>ark-team@jd.com</email>
+        </developer>
+    </developers>
 
     <repositories>
         <repository>
