@@ -54,7 +54,7 @@
         </dependency>
         <dependency>
             <groupId>com.jdcloud.sdk</groupId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>1.0.0</version>
             <artifactId>deploy</artifactId>
         </dependency>
     </dependencies>
